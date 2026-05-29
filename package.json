@@ -1,0 +1,55 @@
+{
+  "name": "ai-meditation-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "tsx --test lib/__tests__/entitlements.test.ts lib/__tests__/guest-limit.test.ts lib/__tests__/signup-consent.test.ts lib/__tests__/static-regression.test.ts lib/__tests__/admin-billing.test.ts",
+    "test:unit": "tsx --test lib/__tests__/entitlements.test.ts lib/__tests__/guest-limit.test.ts lib/__tests__/signup-consent.test.ts lib/__tests__/static-regression.test.ts lib/__tests__/admin-billing.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "postinstall": "prisma generate",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "npx tsx prisma/seed.ts"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.6.0",
+    "@upstash/ratelimit": "^2.0.5",
+    "@upstash/redis": "^1.34.3",
+    "bcryptjs": "^3.0.3",
+    "next": "16.1.6",
+    "nodemailer": "^8.0.2",
+    "openai": "^6.27.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "resend": "^6.9.3",
+    "stripe": "^18.5.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/nodemailer": "^7.0.11",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "prisma": "^6.6.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.19.0",
+    "typescript": "^5"
+  }
+}

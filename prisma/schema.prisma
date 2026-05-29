@@ -1,0 +1,793 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionTier {
+  free
+  premium
+}
+
+enum SubscriptionStatus {
+  inactive
+  trialing
+  active
+  past_due
+  canceled
+}
+
+enum HoroscopeSource {
+  freeastroapi
+  mock
+}
+
+enum UserRole {
+  user
+  admin
+  super_admin
+}
+
+enum PlatformType {
+  web
+  ios
+  android
+  all
+}
+
+enum NotificationAudienceType {
+  all
+  premium
+  free
+  inactive
+  custom
+}
+
+enum NotificationCampaignStatus {
+  draft
+  scheduled
+  sending
+  sent
+  failed
+  canceled
+}
+
+enum NotificationDeliveryStatus {
+  queued
+  sent
+  failed
+  clicked
+  dismissed
+}
+
+enum AlertLevel {
+  info
+  warning
+  critical
+}
+
+enum SupportTicketStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+enum SupportPriority {
+  low
+  medium
+  high
+}
+
+enum SupportCategory {
+  bug
+  billing
+  account
+  content
+  feature_request
+  other
+}
+
+enum SupportSenderType {
+  user
+  admin
+  system
+}
+
+enum ContentEntryStatus {
+  draft
+  active
+  archived
+}
+enum MeditationSessionStatus {
+  preparing
+  ready
+  playing
+  paused
+  completed
+  stopped
+  abandoned
+}
+enum SessionHistoryType {
+  meditation
+  breathing
+  sleep
+  horoscope
+  journal
+  affirmation
+  yoga
+}
+enum SessionHistoryStatus {
+  started
+  completed
+  stopped
+  abandoned
+}
+
+model User {
+  id                        String                    @id @default(cuid())
+  email                     String                    @unique
+  passwordHash              String?
+  emailVerified             Boolean                   @default(false)
+  phoneNumber               String?
+  phoneVerified             Boolean                   @default(false)
+  displayName               String?
+  isAdmin                   Boolean                   @default(false)
+  role                      UserRole                  @default(user)
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  profile                   Profile?
+  subscription              Subscription?
+  dailyUsages               DailyUsage[]
+  apiRequestLogs            ApiRequestLog[]
+  featureFlags              FeatureFlag?
+  authSessions              AuthSession[]
+  adminActions              AdminAuditLog[]           @relation("AdminActor")
+  targetedActions           AdminAuditLog[]           @relation("AdminTarget")
+  pushSubscriptions         PushSubscription[]
+  notificationPreference    NotificationPreference?
+  notificationDeliveries    NotificationDelivery[]
+  createdCampaigns          NotificationCampaign[]    @relation("CampaignCreator")
+  resolvedAlerts            AdminAlert[]              @relation("AlertResolver")
+  createdReleaseNotes       ReleaseNote[]             @relation("ReleaseCreator")
+  supportTickets            SupportTicket[]           @relation("SupportTicketOwner")
+  assignedSupportTickets    SupportTicket[]           @relation("SupportTicketAssignee")
+  supportMessages           SupportTicketMessage[]    @relation("SupportMessageSender")
+  contentEntries            ContentEntry[]            @relation("ContentCreator")
+  createdFeatureFlagRules   FeatureFlagRule[]         @relation("FeatureFlagRuleCreator")
+  notificationEvents        NotificationEvent[]
+  meditationSessions        MeditationSession[]
+  sessionHistory            SessionHistory[]
+  userStreak                UserStreak?
+  moodEntries               MoodEntry[]
+  savedAffirmations         SavedAffirmation[]
+  savedPrompts              SavedPrompt[]
+  journalEntries            JournalEntry[]
+  courseProgress            UserCourseProgress[]
+  dashboardState            DashboardState?
+  emailVerificationToken    EmailVerificationToken?
+  phoneOtp                  PhoneOtp?
+  consents                  UserConsent[]
+
+  @@index([role])
+  @@map("users")
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  tokenHash  String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
+
+model PhoneOtp {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  codeHash     String
+  expiresAt    DateTime
+  attemptCount Int      @default(0)
+  lastSentAt   DateTime
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("phone_otps")
+}
+
+model Profile {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  fullName       String?
+  birthdate      DateTime?
+  zodiacSign     String?
+  birthTime      String?
+  birthLocation  String?
+  latitude       Float?
+  longitude      Float?
+  timezone       String?
+  preferredMood  String?
+  preferredLanguage String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([zodiacSign])
+  @@index([timezone])
+  @@map("profiles")
+}
+
+model Subscription {
+  id                   String              @id @default(cuid())
+  userId               String              @unique
+  stripeCustomerId     String?             @unique
+  stripeSubscriptionId String?             @unique
+  tier                 SubscriptionTier    @default(free)
+  status               SubscriptionStatus  @default(inactive)
+  billingInterval      String?
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tier, status])
+  @@index([billingInterval])
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+  @@map("subscriptions")
+}
+
+model HoroscopeCache {
+  id          String           @id @default(cuid())
+  sign        String
+  dateKey     String
+  source      HoroscopeSource
+  payloadJson Json
+  createdAt   DateTime         @default(now())
+  expiresAt   DateTime
+
+  @@unique([sign, dateKey, source])
+  @@index([dateKey, expiresAt])
+  @@map("horoscope_cache")
+}
+
+model DailyUsage {
+  id              String   @id @default(cuid())
+  userId          String
+  dateKey         String
+  meditationCount Int      @default(0)
+  speechCount     Int      @default(0)
+  horoscopeCount  Int      @default(0)
+  breathingCount  Int      @default(0)
+  sleepCount      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dateKey])
+  @@index([dateKey])
+  @@map("daily_usage")
+}
+
+model ApiRequestLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  route      String
+  method     String
+  ipHash     String
+  userAgent  String?
+  statusCode Int
+  provider   String?
+  platform   String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([route, createdAt])
+  @@index([userId, createdAt])
+  @@index([ipHash, createdAt])
+  @@index([platform, createdAt])
+  @@map("api_request_logs")
+}
+
+model FeatureFlag {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  allowPremiumPreview    Boolean  @default(false)
+  allowWeeklyHoroscope   Boolean  @default(false)
+  allowAdvancedAstrology Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("feature_flags")
+}
+
+model FeatureFlagRule {
+  id               String             @id @default(cuid())
+  key              String
+  title            String
+  description      String?
+  isEnabled        Boolean            @default(false)
+  rolloutPercent   Int                @default(0)
+  platform         PlatformType       @default(all)
+  createdByAdminId String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  createdByAdmin   User?              @relation("FeatureFlagRuleCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@unique([key, platform])
+  @@index([isEnabled])
+  @@map("feature_flag_rules")
+}
+
+model AuthSession {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model AdminAuditLog {
+  id           String   @id @default(cuid())
+  adminUserId  String
+  targetUserId String?
+  action       String
+  entityType   String?
+  entityId     String?
+  targetType   String?
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+  adminUser    User     @relation("AdminActor", fields: [adminUserId], references: [id], onDelete: Cascade)
+  targetUser   User?    @relation("AdminTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([adminUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("admin_audit_logs")
+}
+
+model WebhookEvent {
+  id           String   @id @default(cuid())
+  provider     String
+  eventType    String
+  externalId   String?  @unique
+  status       String
+  payloadJson  Json?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([provider, createdAt])
+  @@index([eventType, createdAt])
+  @@index([status, createdAt])
+  @@map("webhook_events")
+}
+
+model PushSubscription {
+  id            String       @id @default(cuid())
+  userId        String
+  platform      PlatformType @default(web)
+  endpoint      String       @unique
+  p256dh        String
+  auth          String
+  deviceLabel   String?
+  appVersion    String?
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  lastSeenAt    DateTime?
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries    NotificationDelivery[]
+
+  @@index([userId, platform])
+  @@index([isActive])
+  @@map("push_subscriptions")
+}
+
+model NotificationPreference {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  enablePush             Boolean  @default(false)
+  dailyReminder          Boolean  @default(true)
+  meditationReminder     Boolean  @default(true)
+  sleepReminder          Boolean  @default(true)
+  streakReminder         Boolean  @default(true)
+  horoscopeReminder      Boolean  @default(true)
+  billingAlerts          Boolean  @default(true)
+  productAnnouncements   Boolean  @default(true)
+  adminBroadcasts        Boolean  @default(true)
+  quietHoursStart        String?
+  quietHoursEnd          String?
+  reminderMorningTime    String?  // e.g. "08:00"
+  reminderEveningTime    String?  // e.g. "21:00"
+  breathingReminderEnabled   Boolean  @default(false)
+  breathingReminderTime      String?
+  meditationReminderEnabled  Boolean  @default(false)
+  meditationReminderTime     String?
+  sleepReminderEnabled       Boolean  @default(false)
+  sleepReminderTime          String?
+  horoscopeReminderEnabled   Boolean  @default(false)
+  horoscopeReminderTime      String?
+  bibleVerseReminderEnabled  Boolean  @default(false)
+  bibleVerseReminderTime     String?
+  timezone               String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+model NotificationCampaign {
+  id                 String                     @id @default(cuid())
+  title              String
+  message            String
+  type               String
+  audienceType       NotificationAudienceType   @default(all)
+  audienceFilterJson Json?
+  ctaLabel           String?
+  ctaUrl             String?
+  platform           PlatformType               @default(all)
+  scheduledFor       DateTime?
+  sentAt             DateTime?
+  status             NotificationCampaignStatus @default(draft)
+  createdByAdminId   String
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  createdByAdmin     User                       @relation("CampaignCreator", fields: [createdByAdminId], references: [id], onDelete: Cascade)
+  deliveries         NotificationDelivery[]
+
+  @@index([status, scheduledFor])
+  @@index([audienceType])
+  @@map("notification_campaigns")
+}
+
+model NotificationDelivery {
+  id                 String                     @id @default(cuid())
+  campaignId         String?
+  userId             String
+  pushSubscriptionId String?
+  platform           PlatformType               @default(web)
+  title              String
+  message            String
+  status             NotificationDeliveryStatus @default(queued)
+  errorMessage       String?
+  deliveredAt        DateTime?
+  clickedAt          DateTime?
+  metadataJson       Json?
+  createdAt          DateTime                   @default(now())
+  campaign           NotificationCampaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  user               User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushSubscription   PushSubscription?          @relation(fields: [pushSubscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, status])
+  @@index([userId, createdAt])
+  @@index([platform, createdAt])
+  @@map("notification_deliveries")
+}
+
+model NotificationEvent {
+  id           String   @id @default(cuid())
+  userId       String
+  type         String
+  title        String
+  message      String
+  status       String   @default("unread")
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("notification_events")
+}
+
+model AdminAlert {
+  id                String     @id @default(cuid())
+  level             AlertLevel @default(info)
+  type              String
+  title             String
+  message           String
+  isResolved        Boolean    @default(false)
+  resolvedByAdminId String?
+  resolvedAt        DateTime?
+  createdAt         DateTime   @default(now())
+  resolvedByAdmin   User?      @relation("AlertResolver", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([level, isResolved])
+  @@map("admin_alerts")
+}
+
+model ReleaseNote {
+  id               String       @id @default(cuid())
+  version          String
+  title            String
+  content          String
+  platform         PlatformType @default(all)
+  isPublished      Boolean      @default(false)
+  publishedAt      DateTime?
+  createdByAdminId String
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  createdByAdmin   User         @relation("ReleaseCreator", fields: [createdByAdminId], references: [id], onDelete: Cascade)
+
+  @@index([platform, isPublished])
+  @@map("release_notes")
+}
+
+model SupportTicket {
+  id              String              @id @default(cuid())
+  userId          String?
+  email           String?
+  subject         String
+  message         String
+  status          SupportTicketStatus @default(open)
+  priority        SupportPriority     @default(medium)
+  category        SupportCategory     @default(other)
+  assignedAdminId String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  user            User?               @relation("SupportTicketOwner", fields: [userId], references: [id], onDelete: SetNull)
+  assignedAdmin   User?               @relation("SupportTicketAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  messages        SupportTicketMessage[]
+
+  @@index([status, priority])
+  @@index([assignedAdminId])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id           String            @id @default(cuid())
+  ticketId     String
+  senderType   SupportSenderType @default(system)
+  senderUserId String?
+  message      String
+  createdAt    DateTime          @default(now())
+  ticket       SupportTicket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderUser   User?             @relation("SupportMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
+}
+
+model ContentEntry {
+  id               String             @id @default(cuid())
+  key              String
+  title            String
+  content          String
+  type             String
+  tags             String[]
+  status           ContentEntryStatus @default(draft)
+  platform         PlatformType       @default(all)
+  createdByAdminId String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  createdByAdmin   User?              @relation("ContentCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([type, status])
+  @@index([platform])
+  @@map("content_entries")
+}
+
+model AppVersion {
+  id          String       @id @default(cuid())
+  platform    PlatformType
+  version     String
+  buildNumber String?
+  releaseDate DateTime?
+  isCurrent   Boolean      @default(false)
+  notes       String?
+  createdAt   DateTime     @default(now())
+
+  @@index([platform, isCurrent])
+  @@unique([platform, version])
+  @@map("app_versions")
+}
+
+model MeditationSession {
+  id              String                  @id @default(cuid())
+  userId          String
+  mood            String
+  durationMinutes Int
+  voice           String
+  sound           String?
+  breathingStyle  String?
+  scriptText      String
+  audioUrl        String?
+  status          MeditationSessionStatus @default(preparing)
+  startedAt       DateTime?
+  pausedAt        DateTime?
+  completedAt     DateTime?
+  elapsedSeconds  Int                     @default(0)
+  metadataJson    Json?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  historyEntry    SessionHistory?         @relation("MeditationSessionHistory")
+
+  @@index([userId, status, updatedAt])
+  @@index([createdAt])
+  @@map("meditation_sessions")
+}
+
+model SessionHistory {
+  id              String               @id @default(cuid())
+  sessionId       String?              @unique
+  userId          String
+  type            SessionHistoryType
+  title           String
+  summary         String?
+  metadataJson    Json?
+  startedAt       DateTime
+  completedAt     DateTime?
+  durationSeconds Int?
+  status          SessionHistoryStatus
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session         MeditationSession?   @relation("MeditationSessionHistory", fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("session_history")
+}
+model UserStreak {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  currentStreak    Int      @default(0)
+  longestStreak    Int      @default(0)
+  lastActiveDate   String?
+  reflectionStreak Int      @default(0)
+  meditationStreak Int      @default(0)
+  sleepStreak      Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([lastActiveDate])
+  @@map("user_streaks")
+}
+
+model SavedAffirmation {
+  id        String   @id @default(cuid())
+  userId     String
+  text       String
+  theme      String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("saved_affirmations")
+}
+
+model SavedPrompt {
+  id        String   @id @default(cuid())
+  userId     String
+  text       String
+  source     String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("saved_prompts")
+}
+
+model DashboardState {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  lastSessionType   String?
+  lastSessionId     String?
+  lastViewedSection String?
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("dashboard_state")
+}
+
+
+
+model MoodEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  mood      String
+  note      String?
+  dateKey   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dateKey])
+  @@map("mood_entries")
+}
+
+model Course {
+  id           String       @id @default(cuid())
+  slug         String       @unique
+  titleEn      String
+  titleEs      String
+  descriptionEn String?
+  descriptionEs String?
+  durationDays Int
+  isPremium    Boolean      @default(true)
+  orderIndex   Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  steps        CourseStep[]
+  progress     UserCourseProgress[]
+
+  @@map("courses")
+}
+
+model CourseStep {
+  id          String   @id @default(cuid())
+  courseId   String
+  dayIndex   Int
+  titleEn    String
+  titleEs    String
+  descriptionEn String?
+  descriptionEs String?
+  type        String   // meditation | breathing | reflection | rest
+  contentJson Json?
+  orderIndex Int      @default(0)
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, dayIndex])
+  @@map("course_steps")
+}
+
+model UserCourseProgress {
+  id              String    @id @default(cuid())
+  userId          String
+  courseId        String
+  currentStepIndex Int     @default(0)
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@map("user_course_progress")
+}
+
+model UserConsent {
+  id          String   @id @default(cuid())
+  userId      String
+  consentType String
+  version     String
+  acceptedAt  DateTime @default(now())
+  ipHash      String?
+  userAgent   String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consentType])
+  @@index([consentType, acceptedAt])
+  @@map("user_consents")
+}
+
+model JournalEntry {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String   // reflection | gratitude | free
+  prompt     String?
+  content    String
+  sessionId  String?
+  dateKey    String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, dateKey])
+  @@map("journal_entries")
+}
