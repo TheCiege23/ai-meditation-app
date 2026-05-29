@@ -40,8 +40,15 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# runtime data & local SQLite cache (never commit DB or audio cache)
-/data/
+# Runtime/cache data — never commit DB or generated audio
+data/cache.db
+data/cache.db-shm
+data/cache.db-wal
+data/cache.sqlite
+data/audio-cache/
+data/generated/
+data/tmp/
+# data/seo/ is application source code — keep it tracked
 
 # Claude project memory (local AI notes, not source code)
 /memory/
