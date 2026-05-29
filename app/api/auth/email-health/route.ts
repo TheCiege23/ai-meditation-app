@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { getAuthUserRecordById, resolveViewer } from "@/lib/auth";
+import { getAuthUserRecordById, resolveViewer, saveEmailVerificationToken } from "@/lib/auth";
 import { errorResponse, tooManyRequestsResponse } from "@/lib/api-response";
 import { sendVerificationEmail } from "@/lib/email";
 import { getClientIp, hashIp } from "@/lib/identity";
 import { applyRateLimit } from "@/lib/rate-limit";
 import type { AppLanguage } from "@/lib/types";
-import { createEmailVerificationToken } from "@/lib/verification";
+import { generateRandomToken, hashToken } from "@/lib/verification";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -83,13 +83,18 @@ export async function POST(req: Request) {
   const language: AppLanguage = languageHeader === "es" ? "es" : "en";
 
   try {
+    const rawVerificationToken = generateRandomToken(32);
+    const tokenExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24 h
+
+    await saveEmailVerificationToken({
+      userId: user.userId,
+      tokenHash: hashToken(rawVerificationToken),
+      expiresAt: tokenExpiresAt,
+    });
+
     await sendVerificationEmail({
       to: user.email,
-      token: createEmailVerificationToken({
-        userId: user.userId,
-        email: user.email,
-        emailVerified: user.emailVerified,
-      }),
+      token: rawVerificationToken,
       language,
     });
 

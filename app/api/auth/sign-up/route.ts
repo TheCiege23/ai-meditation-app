@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { attachAuthSession, registerUserAccount } from "@/lib/auth";
+import { attachAuthSession, registerUserAccount, saveEmailVerificationToken } from "@/lib/auth";
 import { errorResponse, tooManyRequestsResponse } from "@/lib/api-response";
 import { createUserConsents } from "@/lib/consent";
 import { getEffectiveEntitlements } from "@/lib/entitlements";
@@ -9,7 +9,7 @@ import { applyRateLimit } from "@/lib/rate-limit";
 import { logApiRequest } from "@/lib/user-store";
 import { sendVerificationEmail } from "@/lib/email";
 import type { AppLanguage } from "@/lib/types";
-import { createEmailVerificationToken } from "@/lib/verification";
+import { generateRandomToken, hashToken } from "@/lib/verification";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -68,21 +68,43 @@ export async function POST(req: Request) {
       userAgent: req.headers.get("user-agent"),
     });
 
-    let verificationEmailSent = true;
+    // Generate a random token and persist its hash to the DB before attempting
+    // to send the email. Only the hash is stored — the raw token goes in the link.
+    const rawVerificationToken = generateRandomToken(32);
+    const tokenExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24 h
 
+    let tokenSaved = false;
     try {
-      await sendVerificationEmail({
-        to: account.viewer.email ?? email,
-        token: createEmailVerificationToken({
-          userId: account.userId,
-          email: account.viewer.email ?? email,
-          emailVerified: account.viewer.emailVerified,
-        }),
-        language,
+      await saveEmailVerificationToken({
+        userId: account.userId,
+        tokenHash: hashToken(rawVerificationToken),
+        expiresAt: tokenExpiresAt,
       });
-    } catch (emailError) {
-      console.error("Verification email failed after signup:", emailError);
-      verificationEmailSent = false;
+      tokenSaved = true;
+    } catch (tokenError) {
+      console.error(
+        "[sign-up] verification token DB write failed:",
+        tokenError instanceof Error ? tokenError.message : String(tokenError)
+      );
+    }
+
+    // Only attempt email send when the token row was successfully persisted.
+    // If sending fails, the token row is kept so the user can resend later.
+    let verificationEmailSent = false;
+    if (tokenSaved) {
+      try {
+        await sendVerificationEmail({
+          to: account.viewer.email ?? email,
+          token: rawVerificationToken,
+          language,
+        });
+        verificationEmailSent = true;
+      } catch (emailError) {
+        console.error(
+          "[sign-up] verification email failed:",
+          emailError instanceof Error ? emailError.message : String(emailError)
+        );
+      }
     }
 
     const response = NextResponse.json({

@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { getAuthUserRecordById, updateAuthUserRecord } from "@/lib/auth";
-import { decodeEmailVerificationToken, getEmailVerificationState } from "@/lib/verification";
+import {
+  deleteEmailVerificationTokenByUserId,
+  getAuthUserRecordById,
+  getEmailVerificationTokenRecord,
+  updateAuthUserRecord,
+} from "@/lib/auth";
+import { hashToken } from "@/lib/verification";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,39 +22,57 @@ export async function GET(req: Request) {
   const rawToken = url.searchParams.get("token");
 
   if (!rawToken) {
+    console.warn("[verify-email] token missing from request");
     return redirectToConfirmation(req, "invalid");
   }
 
-  const payload = decodeEmailVerificationToken(rawToken);
-  if (!payload) {
+  // Look up the stored token record by hash — never compare raw tokens directly.
+  const tokenHash = hashToken(rawToken);
+
+  let record: { userId: string; expiresAt: Date } | null = null;
+  try {
+    record = await getEmailVerificationTokenRecord(tokenHash);
+  } catch (err) {
+    console.error(
+      "[verify-email] DB lookup failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+    return redirectToConfirmation(req, "error");
+  }
+
+  if (!record) {
+    console.warn("[verify-email] token not found in DB (not issued, already used, or expired row removed)");
     return redirectToConfirmation(req, "invalid");
   }
 
-  if (payload.exp <= Date.now()) {
+  if (record.expiresAt.getTime() <= Date.now()) {
+    console.warn("[verify-email] token expired for userId:", record.userId);
     return redirectToConfirmation(req, "expired");
   }
 
   try {
-    const user = await getAuthUserRecordById(payload.sub);
+    const user = await getAuthUserRecordById(record.userId);
 
     if (!user) {
+      console.warn("[verify-email] user not found for userId:", record.userId);
       return redirectToConfirmation(req, "invalid");
     }
 
     if (user.emailVerified) {
+      // Already verified — clean up the stale token row and show success.
+      await deleteEmailVerificationTokenByUserId(record.userId);
       return redirectToConfirmation(req, "success");
     }
 
-    if (getEmailVerificationState(user.email, user.emailVerified) !== payload.state) {
-      return redirectToConfirmation(req, "invalid");
-    }
-
-    await updateAuthUserRecord(user.userId, {
-      emailVerified: true,
-    });
+    await updateAuthUserRecord(user.userId, { emailVerified: true });
+    await deleteEmailVerificationTokenByUserId(user.userId);
 
     return redirectToConfirmation(req, "success");
-  } catch {
+  } catch (err) {
+    console.error(
+      "[verify-email] DB write failed:",
+      err instanceof Error ? err.message : String(err)
+    );
     return redirectToConfirmation(req, "error");
   }
 }

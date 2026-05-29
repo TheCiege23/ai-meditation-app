@@ -385,6 +385,59 @@ export async function deletePhoneOtpRecord(userId: string) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Email verification token — DB-backed (no local-cache fallback)
+// ---------------------------------------------------------------------------
+
+/**
+ * Upserts an email-verification token row for the given user.
+ * One row per user (userId is unique); replaces any existing token.
+ * Does NOT fall back to the local SQLite cache — requires Neon.
+ */
+export async function saveEmailVerificationToken(input: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+}): Promise<void> {
+  await prisma.emailVerificationToken.upsert({
+    where: { userId: input.userId },
+    update: {
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+    },
+    create: {
+      userId: input.userId,
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+    },
+  });
+}
+
+/**
+ * Looks up an email-verification token record by its SHA-256 hash.
+ * Returns null when not found (token never issued, already used, or expired row cleaned up).
+ */
+export async function getEmailVerificationTokenRecord(
+  tokenHash: string
+): Promise<{ userId: string; expiresAt: Date } | null> {
+  const record = await prisma.emailVerificationToken.findFirst({
+    where: { tokenHash },
+    select: { userId: true, expiresAt: true },
+  });
+  return record ?? null;
+}
+
+/**
+ * Deletes the verification token for a user (call after successful verification
+ * or when issuing a fresh token to replace a stale one).
+ * Safe to call when no row exists.
+ */
+export async function deleteEmailVerificationTokenByUserId(userId: string): Promise<void> {
+  await prisma.emailVerificationToken.deleteMany({
+    where: { userId },
+  });
+}
+
 export async function authenticateUserCredentials(input: {
   email: string;
   password: string;
